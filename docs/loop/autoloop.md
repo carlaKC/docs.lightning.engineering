@@ -6,7 +6,7 @@ budget of your choosing.
 The autoloop functionality is disabled by default, and can be enabled using the 
 following command:
 ```
-loop setparams --autoout=true
+loop setparams --autoloop=true
 ```
 
 Swaps that are dispatched by the autolooper can be identified in the output of 
@@ -23,34 +23,48 @@ Note that autoloop parameters and rules are not persisted, so must be set on
 restart. We recommend running loopd with `--debuglevel=debug` when using this 
 feature.
 
-### Channel Thresholds 
-To setup the autolooper to dispatch swaps on your behalf, you need to tell it 
-which channels you would like it to perform swaps on, and the liquidity balance 
-you would like on each channel. Desired liqudity balance is expressed using 
-threshold incoming and outgoing percentages of channel capacity. The incoming 
-threshold you specify indicates the minimum percentage of your channel capacity
-that you would like in incoming capacity. The outgoing thresold allows you to 
-reserve a percentage of your balance for outgoing capacity, but may be set to 
-zero if you are only concerned with incoming capcity.
+### Liquidity Targets
+Autoloop can be configured to manage liquidity for individual channels, or for
+a peer as a whole. Peer-level liquidity management will examine the liquidity 
+balance of all the channels you have with a peer. This differs from channel-level
+liquidity, where each channel's individual balance is checked. Note that if you
+set a liquidity rule for a peer, you cannot also set a specific rule for one of
+its channels.
 
-The autolooper will perform swaps that push your incoming channel capacity to 
-at least the incoming threshold you specify, while reserving at least the 
-outgoing capacity threshold. Rules can be set as follows:
+### Liqudity Thresholds 
+To setup the autolooper to dispatch swaps on your behalf, you need to set the 
+liquidity balance you would like for each channel or peer. Desired liquidity 
+balance is expressed using threshold incoming and outgoing percentages of 
+capacity. The incoming threshold you specify indicates the minimum percentage 
+of your capacity that you would like in incoming capacity. The outgoing 
+threshold allows you to reserve a percentage of your balance for outgoing 
+capacity, but may be set to zero if you are only concerned with incoming 
+capacity.
+
+The autolooper will perform swaps that push your incoming capacity to at least 
+the incoming threshold you specify, while reserving at least the outgoing 
+capacity threshold. Rules can be set as follows:
 
 ```
-loop setrule {short channel id} --incoming_threshold={minimum % incoming} --outgoing_threshold={minimum % outgoing}
+loop setrule {short channel id/ peer pubkey} --incoming_threshold={minimum % incoming} --outgoing_threshold={minimum % outgoing}
 ```
 
-To remove a channel from consideration, its rule can simply be cleared:
+To remove a rule from consideration, its rule can simply be cleared:
 ```
-loop setrule {short channel id} --clear
+loop setrule {short channel id/ peer pubkey} --clear
 ```
 
 ## Fees
-Fee control is one of the most important features of the autolooper, so we expose 
-multiple fee related settings which can be used to tune the autolooper to your 
-preference. Note that these fees are expressed on a per-swap basis, rather than 
-as an overall budget. 
+The amount of fees that an automatically dispatched swap consumes can be limited
+to a percentage of the swap amount using the fee percentage parameter:
+```
+loop setparams --feepercent={percentage of swap amount}
+```
+
+If you would like finer grained control over swap fees, there are multiple fee
+related settings which can be used to tune the autolooper to your preference.
+The sections that follow explain these settings in detail. Note that these fees 
+are expressed on a per-swap basis, rather than as an overall budget. 
 
 ### On-Chain Fees
 When performing a successful loop out swap, the loop client needs to sweep the 
@@ -224,8 +238,55 @@ in manually dispatched swaps - for loop out, this would mean the channel is
 specified in the outgoing channel swap, and for loop in the channel's peer is 
 specified as the last hop for an ongoing swap. This check is put in place to 
 prevent the autolooper from interfering with swaps you have created yourself. 
-If there is an ongoing swap that does not have a restriction placed on it (no 
-outgoing channel set, or last hop), then the autolooper will take no action 
-until it has resolved, because it does not know how that swap will affect 
-liquidity balances. 
 
+## Disqualified Swaps
+There are various restrictions placed on the client's autoloop functionality.
+If a channel is not eligible for a swap at present, or it does not need one
+based on the current set of liquidity rules, it will be listed in the 
+`Disqualified` section of the output of the `SuggestSwaps` API. One of the 
+following reasons will be displayed:
+
+* Budget not started: if the start date for your budget is in the future,
+  no swaps will be executed until the start date is reached. See [budget](#budget) to
+  update.
+* Budget elapsed: if the autolooper has elapsed the budget assigned to it for 
+  fees, this reason will be returned. See [budget](#budget) to update.
+* Sweep fees: this reason will be displayed if the estimated chain fee rate for
+  sweeping a loop out swap is higher than the current limit. See [sweep fees](#fee-market-awareness) 
+  to update.
+* In flight: there is a limit to the number of automatically dispatched swaps
+  that the client allows. If this limit has been reached, no further swaps
+  will be automatically dispatched until the in-flight swaps complete. See 
+  [in flight limit](#in-flight-limit) to update.
+* Budget insufficient: if there is not enough remaining budget for a swap, 
+  including the amount currently reserved for in flight swaps, an insufficient
+  reason will be displayed. This differs from budget elapsed because there is
+  still budget remaining, just not enough to execute a specific swap.
+* Swap fee: there is a limit placed on the fee that the client will pay to the
+  server for automatically dispatched swaps. The swap fee reason will be shown 
+  if the fees advertised by the server are too high. See [swap fee](#swap-fee)
+  to update.
+* Miner fee: if the estimated on-chain fees for a swap are too high, autoloop
+  will display a miner fee reason. See [miner fee](#miner-fee) to update. 
+* Prepay: if the no-show fee that the server will pay in the unlikely event 
+  that the client fails to complete a swap is too high, a prepay reason will
+  be returned. See [no show fees](#no-show-fee) to update. 
+* Backoff: if an automatically dispatched swap has recently failed for a channel,
+  autoloop will backoff for a period before retrying. See [failure backoff](#failure-backoff) 
+  to update. 
+* Loop out: if there is currently a loop out swap in-flight on a channel, it 
+  will not be used for automated swaps. This issue will resolve itself once the 
+  in-flight swap completes.
+* Loop in: if there is currently a loop in swap in-flight for a peer, it will 
+  not be used for automated swaps. This will resolve itself once the swap is 
+  completed.
+* Liquidity ok: if a channel's current liquidity balance is within the bound set
+  by the rule that it applies to, then a liquidity ok reason will be displayed
+  to indicate that no action is required for that channel.
+* Fee insufficient: if the fees that a swap will cost are more than the
+  percentage of total swap amount that we allow, this reason will be displayed.
+  See [fees](#fees) to update this value.
+
+
+Further details for all of these reasons can be found in loopd's debug level 
+logs.
