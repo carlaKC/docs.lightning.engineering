@@ -23,23 +23,23 @@ jobs:
         include:
           - repo: lnd
             org: lightningnetwork
-            src: docs
+            src: docs/*
             dest: docs/lnd
           - repo: lightning-terminal
             org: lightninglabs
-            src: doc
+            src: doc/*
             dest: docs/lit
           - repo: loop 
             org: lightninglabs
-            src: docs
+            src: docs/*
             dest: docs/loop
           - repo: faraday 
             org: lightninglabs
-            src: docs
+            src: docs/*
             dest: docs/faraday
           - repo: pool 
             org: lightninglabs
-            src: docs
+            src: docs/*
             dest: docs/pool
           - repo: run-lnd
             org: alexbosworth
