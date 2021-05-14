@@ -15,6 +15,8 @@ destDir="$3"
 # diff a directory that does not exist.
 mkdir -p "$destDir"
 
+echo "$sourceDir"
+
 # Copy everything from source to destination, replacing what's there.
 cp -a "$sourceDir" "$destDir"
 
