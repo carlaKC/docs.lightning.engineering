@@ -1,5 +1,7 @@
 #!/bin/bash
 
+echo $#
+
 if [ $# -ne 3 ];
     then echo "args required: source repo, source dir, target dir"
     exit 1
